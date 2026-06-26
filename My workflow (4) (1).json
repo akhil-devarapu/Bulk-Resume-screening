@@ -1,0 +1,785 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Input: items[0].json contains your CSV string\n// Output: one item per row as JSON\n\nconst csvString = $input.first().json.data;   // whole CSV string comes here\nconst rows = csvString.split(\"\\r\\n\").filter(r => r.trim() !== \"\"); // split by line\n\n// First row is headers\nconst headers = rows[0].split(\",\");\n\n// Remaining rows are data\nconst output = [];\n\nfor (let i = 1; i < rows.length; i++) {\n  const values = rows[i].split(\",\");\n  let rowObj = {};\n\n  headers.forEach((header, index) => {\n    rowObj[header] = values[index] || \"\";\n  });\n\n  output.push({ json: rowObj });\n}\n\nreturn output;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        304,
+        -256
+      ],
+      "id": "382715d3-6997-4291-8cf8-168dd8be7c74",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        960,
+        -352
+      ],
+      "id": "fec33fa0-3025-4da4-ba19-4dab229f8ca7",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "name": "Replace Me",
+      "typeVersion": 1,
+      "position": [
+        816,
+        32
+      ],
+      "id": "00aec053-c570-497f-bbf3-0387f2689237"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.ResumeDownloadUrl }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1568,
+        -464
+      ],
+      "id": "5a4d6214-c4c8-4f1f-81ea-a2d26ee85ae5",
+      "name": "HTTP Request",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Function node: flatten aggregate data[] and convert Google Drive/Docs links to direct download URLs\n\nconst out = [];\n\n// Helper: convert Google Drive/Docs share link → direct download link\nfunction toDownloadUrl(link) {\n  if (!link) return \"\";\n\n  let fileId = \"\";\n\n  // Case 1: Google Docs (convert to PDF)\n  let match = link.match(/document\\/d\\/([^/]+)/);\n  if (match && match[1]) {\n    fileId = match[1];\n    return `https://docs.google.com/document/d/${fileId}/export?format=pdf`;\n  }\n\n  // Case 2: Google Sheets (convert to PDF)\n  match = link.match(/spreadsheets\\/d\\/([^/]+)/);\n  if (match && match[1]) {\n    fileId = match[1];\n    return `https://docs.google.com/spreadsheets/d/${fileId}/export?format=pdf`;\n  }\n\n  // Case 3: Google Slides (convert to PDF)\n  match = link.match(/presentation\\/d\\/([^/]+)/);\n  if (match && match[1]) {\n    fileId = match[1];\n    return `https://docs.google.com/presentation/d/${fileId}/export/pdf`;\n  }\n\n  // Case 4: Google Drive /d/{fileId}/\n  match = link.match(/\\/d\\/([^/]+)\\//);\n  if (match && match[1]) {\n    fileId = match[1];\n    return `https://drive.google.com/uc?export=download&id=${fileId}`;\n  }\n\n  // Case 5: Google Drive ?id={fileId}\n  match = link.match(/[?&]id=([^&]+)/);\n  if (match && match[1]) {\n    fileId = match[1];\n    return `https://drive.google.com/uc?export=download&id=${fileId}`;\n  }\n\n  // Default: return as-is\n  return link;\n}\n\nfor (const row of items[0].json.data) {\n  const originalLink = row[\"Resume link\"] || \"\";\n\n  out.push({\n    json: {\n      Name: row[\"Name\"] || \"\",\n      ResumeLink_original: originalLink,\n      ResumeDownloadUrl: toDownloadUrl(originalLink),\n      ProcessFlag: row[\"toProcess\"] || \"TO_PROCESS\",\n      Timestamp: new Date().toISOString()\n    }\n  });\n}\n\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        -464
+      ],
+      "id": "213bdf3b-cdb6-4f11-bd45-4e22abbc9182",
+      "name": "Code1"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        1744,
+        -480
+      ],
+      "id": "23335e4b-44a8-4ceb-a4b2-4ca0b4a700d6",
+      "name": "Extract from File",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "options": {
+          "systemMessage": "={{ $json.prompt }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        2272,
+        -320
+      ],
+      "id": "d6b1bd87-ec29-4c84-bdf5-2e6e6ea78d27",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2288,
+        -160
+      ],
+      "id": "1a00a295-e2c5-4f02-aef3-c888d857ecf8",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "a0xMFZrNEKXKnZFo",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse AI output from common LLM response shapes and strip code fences\nconst out = [];\n\nfor (const item of items) {\n  const j = item.json;\n  // try common places for the model text\n  let raw = \"\";\n  if (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) {\n    raw = j.choices[0].message.content;\n  } else if (j.text) {\n    raw = j.text;\n  } else if (j.output) {\n    raw = j.output;\n  } else if (j.aiOutput) {\n    raw = j.aiOutput;\n  } else if (j[\"AI Agent\"]) {\n    raw = j[\"AI Agent\"];\n  } else {\n    // fallback: stringify whole item\n    raw = JSON.stringify(j);\n  }\n\n  // remove code fences like ```json ... ```\n  raw = raw.replace(/^\\s*```(?:json)?\\s*/i, \"\").replace(/\\s*```$/i, \"\").trim();\n\n  // try to extract first {...} block\n  const bracketMatch = raw.match(/\\{[\\s\\S]*\\}/);\n  let parsed = null;\n  try {\n    parsed = bracketMatch ? JSON.parse(bracketMatch[0]) : JSON.parse(raw);\n  } catch (err) {\n    // return parse error (we'll handle later)\n    parsed = { __parseError: err.message, __raw: raw };\n  }\n\n  out.push({ json: parsed });\n}\n\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2832,
+        -240
+      ],
+      "id": "72d0a7dc-c64a-4e65-bd3c-277f12eb61e6",
+      "name": "Code2"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "12dad0b0-9dea-45c0-87b4-1a0d3b5af2a4",
+        "options": {
+          "binaryPropertyName": "csv"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -32,
+        432
+      ],
+      "id": "c3a8e8ce-494d-441e-b3f3-e155d74b5bcf",
+      "name": "Webhook",
+      "webhookId": "12dad0b0-9dea-45c0-87b4-1a0d3b5af2a4"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        1136,
+        -416
+      ],
+      "id": "fef37470-6c5f-4672-8ec7-3d5ddbb52029",
+      "name": "Aggregate"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $json.csvLink }}",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.sheetname }}",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "email"
+          ],
+          "schema": [
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Resume link",
+              "displayName": "Resume link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "toProcess",
+              "displayName": "toProcess",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "linkedin_url",
+              "displayName": "linkedin_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "overall_score_100",
+              "displayName": "overall_score_100",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "decision",
+              "displayName": "decision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "gate_fail_reason",
+              "displayName": "gate_fail_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "impact_ownership_rating",
+              "displayName": "impact_ownership_rating",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "impact_ownership_evidence",
+              "displayName": "impact_ownership_evidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "leadership_influence_rating",
+              "displayName": "leadership_influence_rating",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "leadership_influence_evidence",
+              "displayName": "leadership_influence_evidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "process_reporting_rating",
+              "displayName": "process_reporting_rating",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "process_reporting_evidence",
+              "displayName": "process_reporting_evidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "tools_automation_rating",
+              "displayName": "tools_automation_rating",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "tools_automation_evidence",
+              "displayName": "tools_automation_evidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "role_match_rating",
+              "displayName": "role_match_rating",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "role_match_evidence",
+              "displayName": "role_match_evidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "csvLink",
+              "displayName": "csvLink",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "sheetname",
+              "displayName": "sheetname",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3824,
+        240
+      ],
+      "id": "476ef4ea-9eb3-45b0-b268-b276478ff249",
+      "name": "Update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "KYepZMRZksqXtJmP",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Input: Google Sheets link as \"sheetLink\"\nconst link =$input.first().json.body.csv ;  \n\n// Extract File ID from /d/xxxx/\nconst fileIdMatch = link.match(/\\/d\\/(.*?)\\//);\nif (!fileIdMatch) {\n  throw new Error(\"Invalid Google Sheets link format\");\n}\nconst fileId = fileIdMatch[1];\n\n// Extract GID (sheet/tab ID) from ?gid=xxxx or #gid=xxxx\nconst gidMatch = link.match(/gid=(\\d+)/);\nconst gid = gidMatch ? gidMatch[1] : \"0\";  // default to first sheet if not found\n\n// Construct direct CSV/XLSX export links for that specific sheet\nconst csvLink = `https://docs.google.com/spreadsheets/d/${fileId}/export?format=csv&gid=${gid}`;\nconst xlsxLink = `https://docs.google.com/spreadsheets/d/${fileId}/export?format=xlsx&gid=${gid}`;\n\nreturn {\n  json: {\n    originalLink: link,\n    fileId,\n    gid,\n    csvDownloadLink: csvLink,\n    xlsxDownloadLink: xlsxLink\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -336,
+        0
+      ],
+      "id": "9ed8ba7e-8150-4a51-96a1-5a9388dc8216",
+      "name": "Code3"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.csvDownloadLink }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -48,
+        -144
+      ],
+      "id": "4da90f2b-a1c3-4c5d-9ea4-297c2c8dc48e",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = items.map(i => i.json);\nconst toProcess = [];\n\nfor (let r of rows) {\n  if ((r.toProcess || \"\").toUpperCase() === \"TO_PROCESS\") {\n    toProcess.push({ json: r });\n  }\n}\n\nreturn toProcess;\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        -304
+      ],
+      "id": "66c0c5f4-b875-4e29-8cad-6c4556ee4f1c",
+      "name": "Code4"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3232,
+        144
+      ],
+      "id": "4de83627-e58d-42f8-8c53-c97c66dd401d",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "// items[0] = webhook node (contains csvLink in body.csv and optional sheetname)\n// items[1..] = candidate responses\n\nconst webhookData = items[0].json;\n\n// Extract CSV link and convert to direct download\nconst sheetLink = webhookData.body?.csv || null;\nconst sheetname = webhookData.body?.sheetName ; // default if not provided\nlet csvDownloadLink = null;\n\nif (sheetLink) {\n    const fileIdMatch = sheetLink.match(/\\/d\\/(.*?)\\//);\n    if (fileIdMatch) {\n        const fileId = fileIdMatch[1];\n        csvDownloadLink = `https://docs.google.com/spreadsheets/d/${fileId}/export?format=csv&gid=0`;\n    }\n}\n\n// Process each candidate and attach csvLink and sheetname\nconst processedCandidates = items.slice(1).map(i => {\n    return {\n        json: {\n            ...i.json,\n            csvLink: csvDownloadLink,\n            sheetname: sheetname\n          \n        }\n    };\n});\n\nreturn processedCandidates;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3552,
+        16
+      ],
+      "id": "7ea0ddb0-b3e2-41cd-bb68-b6971de9caea",
+      "name": "Code5"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1536,
+        96
+      ],
+      "id": "c92190f2-1886-42b5-a692-b37cbf92d2bb",
+      "name": "Merge1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collect all incoming items\nconst incoming = $input.all();\n\n// Extract the prompt (from webhook body, assuming first item)\nconst prompt = incoming[0].json.body?.prompt || \"\";\n\n// Build separate output items for each candidate\nconst results = [];\n\nincoming.forEach((item, index) => {\n  if (item.json.text && item.json.text.trim() !== \"\") {\n    results.push({\n      json: {\n        prompt,\n        candidate_id: index + 1,\n        text: item.json.text\n      }\n    });\n  }\n});\n\n// Return each candidate as its own item\nreturn results;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1824,
+        16
+      ],
+      "id": "284c84bc-df67-4100-8491-6c8cfc454cb3",
+      "name": "Code6"
+    }
+  ],
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "devaarapuakhil.app.n8n.cloud",
+            "user-agent": "Lovable-Prompt-Builder/1.0",
+            "content-length": "6684",
+            "accept": "*/*",
+            "accept-encoding": "gzip, br",
+            "accept-language": "*",
+            "cdn-loop": "cloudflare; loops=1; subreqs=1",
+            "cf-connecting-ip": "2406:da1a:c77:d408:85b2:dbed:baca:d84b",
+            "cf-ew-via": "15",
+            "cf-ipcountry": "IN",
+            "cf-ray": "97adf83bd7bf4928-BOM",
+            "cf-visitor": "{\"scheme\":\"https\"}",
+            "cf-worker": "n8n.cloud",
+            "content-type": "application/json",
+            "x-forwarded-for": "2406:da1a:c77:d408:85b2:dbed:baca:d84b, 172.69.87.23",
+            "x-forwarded-host": "devaarapuakhil.app.n8n.cloud",
+            "x-forwarded-port": "443",
+            "x-forwarded-proto": "https",
+            "x-forwarded-server": "traefik-prod-users-gwc-45-5cf4858c8f-sczzn",
+            "x-is-trusted": "yes",
+            "x-real-ip": "2406:da1a:c77:d408:85b2:dbed:baca:d84b"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "prompt": "Resume Screening Instructions for  Associate Video Producer \n\nROLE CONTEXT:\n- Position:  Associate Video Producer  ( Associate Video Producer )\n- Job Description:  Associate Video Producer – Job Description (Campus Role)\n Location: Assigned NIAT Campus (On-site)\n\nRole Overview:\nWe are seeking a dynamic and detail-oriented Associate Video Producer to lead and execute end-to-end video content creation at each NIAT campus. You will own the full campus content workflow—from ideation and coordinating shoots with the cinematographer to managing  footage, basic editing, content delivery, and syncing content with central teams. You're part producer, part creative lead, and fully committed to making storytelling happen daily on campus.\n\nKey Responsibilities:\nPlan, coordinate, and support all video shoots on campus in alignment with the central brand and production teams.\n \nLiaise with students, faculty, and the cinematographer to prepare for shoots and direct on-ground content.\n\n\nManage content folders, sync footage, and handle asset handovers.\n\n\nPerform basic video editing and clipping for social-ready content.\n\n\nMonitor and support content campaigns such as student vlogs, tech demos, and more.\n\n\nAnchor videos when required and contribute to student-driven content initiatives.\n\n\nEnsure smooth operations of on-campus content creation every week in collaboration with the brand team.\n\n\nRequirements:\n1–3 years of experience in media production, video production, or related fields.\n\n\nExperience in content creation and on-camera work is a plus.\n\n\nHands-on experience in organising shoots and working with video content.\n\n\nBasic video editing skills (using Premiere Pro, CapCut, or similar tools) and familiarity with camera operations.\n\n\nComfortable working on-camera and leading small crews.\n\n\nStrong organisational and communication skills.\n\n\nA self-starter with a collaborative mindset and a passion for content creation.\n\n\n\n\nSCORING APPROACH:\n- BE FAIR AND BALANCED in evaluation\n- Look for concrete evidence and achievements where available\n- Award scores based on demonstrated experience and skills\n- Consider both specific metrics and relevant experience descriptions\n- Give credit for transferable skills and relevant achievements\n- Balance specificity with practical resume writing variations\n\nOUTPUT JSON SCHEMA (return ONLY this JSON):\n{\n  \"name\": \"\",\n  \"email\": \"\",\n  \"phone\": \"\",\n  \"linkedin_url\": \"\",\n  \"overall_score_100\": 0.0,\n  \"decision\": \"Strong\" | \"Workable\" | \"Mismatch\",\n  \"gate_fail_reason\": \"\",\n  \"impact_ownership_rating\": 0,\n  \"impact_ownership_evidence\": \"\",\n  \"leadership_influence_rating\": 0,\n  \"leadership_influence_evidence\": \"\",\n  \"process_reporting_rating\": 0,\n  \"process_reporting_evidence\": \"\",\n  \"tools_automation_rating\": 0,\n  \"tools_automation_evidence\": \"\",\n  \"role_match_rating\": 0,\n  \"role_match_evidence\": \"\"\n}\n\nGATE CHECKS (must meet minimum requirements):\n- Minimum 3 years total experience (some flexibility for career growth patterns)\n- At least 2 years relevant experience (includes transferable skills)\n- Required tools: None specified (exact or equivalent tools)\n- Must have keywords: None specified (related keywords accepted)\n- Red flags: None specified (disqualifying factors)\n- Location preference: Any location (preferred but flexible)\n\nBALANCED SCORING CRITERIA:\n\n1. Impact & Ownership (Weight: 25%)\n   Rating 1-5 where:\n   - 5: Exceptional quantified impact with clear ownership (specific numbers, percentages, results)\n   - 4: Strong impact with good ownership examples and measurable results\n   - 3: Clear evidence of impact and ownership with some quantifiable outcomes\n   - 2: Some evidence of impact or ownership, may include descriptive achievements\n   - 1: Minimal evidence of impact or ownership\n\n2. Leadership/Influence (Weight: 20%)\n   Rating 1-5 where:\n   - 5: Led large teams (8+ people) or major initiatives with clear success\n   - 4: Led medium teams (4-8 people) or significant projects with good results\n   - 3: Led small teams (2-4 people) or projects with documented outcomes\n   - 2: Some leadership experience or influence with basic results\n   - 1: Limited or no clear leadership/influence demonstrated\n\n3. Process & Reporting (Weight: 20%)\n   Rating 1-5 where:\n   - 5: Advanced process improvement with specific tools and clear efficiency gains\n   - 4: Good process improvement experience with documented tools and results\n   - 3: Moderate process improvement with some tools and measurable outcomes\n   - 2: Basic process experience with limited tools but relevant experience\n   - 1: Minimal process improvement experience\n\n4. Tools & Automation (Weight: 15%)\n   Rating 1-5 where:\n   - 5: Advanced automation/tools expertise with specific technologies and clear improvements\n   - 4: Strong automation/tools experience with documented technologies and results\n   - 3: Moderate automation/tools experience with relevant technologies and outcomes\n   - 2: Basic automation/tools experience with some relevant technologies\n   - 1: Minimal automation/tools experience\n\n5. Role Match (Weight: 20%)\n   Rating 1-5 where:\n   - 5: Excellent match - most key requirements met with highly relevant experience\n   - 4: Strong match - many key requirements met with relevant experience\n   - 3: Good match - several key requirements met with applicable experience\n   - 2: Partial match - some key requirements met with transferable experience\n   - 1: Poor match - few requirements met or limited relevance\n\nCALCULATION:\noverall_score_100 = Σ((rating/5) × weight), rounded to 1 decimal\n\nDECISION LOGIC:\n- Strong: overall_score_100 ≥ 75\n- Workable: overall_score_100 ≥ 60\n- Mismatch: overall_score_100 < 60\n\nEVALUATION GUIDELINES:\n1. Be fair and thorough - high scores should reflect genuine accomplishments\n2. don't search for the keywords analyse skills and criteria by his past work or projects\n3. Consider context and give reasonable benefit of doubt when evidence is present\n4. Balance specificity with realistic resume variations\n5. Credit relevant experience even if not perfectly aligned\n6. Award ratings based on demonstrated capability and potential\n7. Aim for realistic score distribution across the 1-5 range\n8. Extract contact information accurately from the resume\n9. Provide clear evidence for each rating with constructive reasoning",
+            "csv": "https://docs.google.com/spreadsheets/d/1Wq0OqKiL42RERo_WeLPZ3RjWjTNh1cxm3T8oMULq8Ds/edit?gid=0#gid=0",
+            "sheetName": "Sheet3"
+          },
+          "webhookUrl": "https://devaarapuakhil.app.n8n.cloud/webhook/12dad0b0-9dea-45c0-87b4-1a0d3b5af2a4",
+          "executionMode": "production"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Code4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Replace Me",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Replace Me": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Code2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code2": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code3",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Code1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code3": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code4": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code5": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "Code6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code6": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "55e69bd8-812b-4830-907d-0d938639d3d8",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "762a6e918c7b0b0c8040c7c5d4239ea6fb84e5e0115aca60721568c2cb9876ab"
+  },
+  "id": "kL2Hhi2gITTOT4W4",
+  "tags": []
+}
